@@ -1,0 +1,82 @@
+---
+title: "Machine Learning Model for Activity Tracking"
+author: "Matt DeVries"
+date: "April 7, 2016"
+output: html_document
+---
+
+##Introduction
+The data for this study came from the weight lifting database at <a href="http://groupware.les.inf.puc-rio.br/har">http://groupware.les.inf.puc-rio.br/har</a>.  The paper "Qualitative Activity Recognition of Weight Lifting Excercises" describes attempts to identify correct and incorrect technique in weight lifting.  The study used activity trackers to quantify the movement used in lifting weights using a dumbbell bicep curl. This study examines the same question using machine learning.
+
+##Method
+The dataset includes information from four activity trackers placed on the subjects' belt, glove, armband and dumbbell.  Six participants were asked to perform bicep curls using the dumbbell in five different methods.  For Class A, the participants performed the lift correctly.  For Classes B, C, D and E, the participants performed the lift altering their technique in manners deemed deficient.
+
+##Data Analysis
+The author used machine learning functions in the caret package to analyze the data for the weight lifting activity.
+
+```{r, warning=FALSE, message=FALSE}
+library(caret); library(ggplot2); library(dplyr); library(e1071); library(xtable); library(randomForest)
+
+training <- read.csv("./pml-training.csv")
+test <- read.csv("./pml-testing.csv")
+```
+
+In order to shorten the processing time for the machine learning training, the author removed samples and variables from the dataset.  Variables were limited to those variables, which had data in the test dataset provided by the authors of “Qualitative Activity Recognition of Weight Lifting Exercises.”  One hundred variables were removed from the dataset, based on their absence from the test dataset.  Samples were also removed if their observation wasn’t a “window.”  Variables observed in a “window” observation better matched the variables recorded from the test dataset.  The number of observations was reduced from 19,622 to 406.
+
+```{r}
+##Subset observation
+trainingSub <- subset(training, training$new_window == "yes")
+
+##Find NA's in Test Set
+row_nas <- is.na(test[1,])
+##Remove NA variables
+trainSub2 <- trainingSub[, !row_nas]
+
+```
+
+The author then divided the primary dataset into a training set and testing set. The testing set was set aside for use to evaluate the out-of-sample error of the model.
+```{r}
+##Split into training & test
+inTrain <- createDataPartition(y=trainSub2$classe, p = 0.7, list = F)
+trainingFinal <- trainSub2[inTrain, ]
+testingFinal <- trainSub2[-inTrain, ]
+```
+
+The model was built using a random forest algorithm.  The author chose random forest because of its high accuracy in building models. All remaining variables in the dataset were given as predicators for the outcome ‘classe,’ which defined the technique used for weight lifting. 
+
+
+In order to avoid over-fitting the model to the training dataset, the author used cross-validation while training the model. This model used 10-fold cross validation, which was repeated 10 times.
+
+```{r, cache=T,  warning=FALSE, message=FALSE}
+##k-fold
+fitControl <- trainControl(## 10-fold CV
+  method = "repeatedcv",
+  number = 10,
+  ## repeated ten times
+  repeats = 10)
+
+modFit <- train(classe ~ ., method = "rf", data = trainingFinal, trControl = fitControl)
+```
+
+##Training Model Results
+```{r }
+trainPred <- predict(modFit, trainingFinal)
+cMatrixTrain <- confusionMatrix(trainPred, trainingFinal$classe)
+print(cMatrixTrain, printStats = F)
+```
+```{r showtable, results='asis'}
+yt <- xtable(modFit$results, caption = "Table of Random Forest Model Results", auto = T)
+print(yt, type="html")
+```
+
+Accuracy was used to select the optimal model using the largest value. The final value used for the model was mtry = 41. The optimal model had an accuracy rate of 99.3%.  
+
+##Testing Model Results
+After generating the model, the testing dataset was checked.
+
+```{r}
+predict1 <- predict(modFit, newdata = testingFinal)
+cMatrix <- confusionMatrix(predict1, testingFinal$classe)
+print(cMatrix, printStats = F)
+```
+The model provided 100% accuracy when tested against the testing set.  The high rate of accuracy in the testing set suggests the model is not over-fitted and has a good rate of out-of-sample error.
